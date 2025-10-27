@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sever Cakes - Admin (Frontend only)</title>
+  <style>
+    :root{--accent:#7b3fe4;--muted:#666}
+    body{font-family:Inter,system-ui,Arial;margin:0;background:#f6f7fb;color:#111}
+    .app{display:flex;height:100vh}
+    .sidebar{width:260px;background:#fff;border-right:1px solid #e6e8ef;padding:18px;box-sizing:border-box}
+    .logo{font-weight:700;color:var(--accent);font-size:18px;margin-bottom:14px}
+    .nav{display:flex;flex-direction:column;gap:6px}
+    .nav button{background:transparent;border:none;padding:10px 12px;text-align:left;border-radius:8px;cursor:pointer}
+    .nav button.active{background:#f0ebff}
+    .main{flex:1;padding:18px;overflow:auto}
+    .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 0 0 1px rgba(12,14,20,0.03)}
+    h2{margin:0 0 10px 0}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border-bottom:1px solid #f0f0f3;text-align:left}
+    .row{display:flex;gap:12px}
+    .btn{display:inline-block;padding:8px 10px;border-radius:8px;border:1px solid transparent;cursor:pointer}
+    .btn.primary{background:var(--accent);color:#fff}
+    .btn.ghost{background:transparent;border:1px solid #e6e8ef}
+    .small{font-size:13px;color:var(--muted)}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#fffbf0;color:#b26b00;font-weight:600;font-size:12px}
+    .controls{display:flex;gap:8px;align-items:center}
+    input,select,textarea{padding:8px;border-radius:8px;border:1px solid #e6e8ef}
+    .flex-space{display:flex;justify-content:space-between;align-items:center}
+    .alert{background:#fff7f0;border-left:4px solid #ffb020;padding:10px;border-radius:8px}
+    .muted{color:var(--muted)}
+    /* responsive */
+    @media (max-width:880px){.sidebar{display:none}.app{flex-direction:column}.main{padding:12px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar card">
+      <div class="logo">Sever Cakes - Quản trị</div>
+      <div style="margin-bottom:10px" class="small">Vai trò: <strong id="currentRole">Admin</strong></div>
+      <div class="nav" id="nav">
+        <button data-view="dashboard" class="active">Dashboard</button>
+        <button data-view="products">Sản phẩm</button>
+        <button data-view="ingredients">Nguyên liệu</button>
+        <button data-view="orders">Đơn hàng</button>
+        <button data-view="customers">Khách hàng</button>
+        <button data-view="feedback">Phản hồi</button>
+        <button data-view="vouchers">Voucher</button>
+        <button data-view="shifts">Ca làm</button>
+        <button data-view="reports">Báo cáo</button>
+      </div>
+      <div style="margin-top:12px">
+        <label class="small">Chọn vai trò thử (mô phỏng phân quyền)</label>
+        <select id="roleSelect" style="width:100%;margin-top:6px">
+          <option value="admin">Admin</option>
+          <option value="sales">Nhân viên bán hàng</option>
+          <option value="warehouse">Nhân viên kho</option>
+        </select>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- all views injected here -->
+      <div id="view"></div>
+    </main>
+  </div>
+
+<script>
+// ---------- Simple SPA + localStorage 'backend' ----------
+const STORAGE_KEY = 'severcakes_demo_v1';
+let state = loadState();
+let currentView = 'dashboard';
+let currentRole = 'admin';
+
+function defaultState(){
+  return {
+    products:[
+      {id:1,name:'Bánh bông lan',sku:'BANH001',price:45,stock:20,description:'Bông lan mềm'},
+      {id:2,name:'Bánh kem sữa',sku:'BANH002',price:120,stock:8,description:'Bánh kem tươi'}
+    ],
+    ingredients:[
+      {id:1,name:'Bột mì',qty:10,unit:'kg',lowThreshold:5},
+      {id:2,name:'Trứng',qty:30,unit:'pcs',lowThreshold:10},
+      {id:3,name:'Sữa tươi',qty:8,unit:'l',lowThreshold:5}
+    ],
+    orders:[],
+    customers:[],
+    feedbacks:[],
+    vouchers:[],
+    shifts:[],
+  }
+}
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return defaultState();
+    return JSON.parse(raw);
+  }catch(e){return defaultState();}
+}
+function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
+
+// ---------- Utils ----------
+function el(tag,props={},children=''){const d=document.createElement(tag);for(let k in props)if(k.startsWith('on'))d.addEventListener(k.slice(2),props[k]);else d.setAttribute(k,props[k]);if(typeof children==='string')d.innerHTML=children;else if(Array.isArray(children))children.forEach(c=>d.appendChild(c));else if(children) d.appendChild(children);return d}
+function uid(){return Date.now()+Math.floor(Math.random()*999)}
+
+// ---------- Router & render ----------
+const nav = document.getElementById('nav');
+nav.addEventListener('click',e=>{const b=e.target.closest('button');if(!b) return;setView(b.dataset.view)});
+function setView(v){currentView=v;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));renderView()}
+
+document.getElementById('roleSelect').addEventListener('change',e=>{currentRole=e.target.value;document.getElementById('currentRole').innerText = roleLabel(currentRole);renderView()});
+function roleLabel(r){return r==='admin'?'Admin':(r==='sales'?'Nhân viên bán hàng':'Nhân viên kho')}
+
+function renderView(){
+  const container = document.getElementById('view');
+  container.innerHTML='';
+  if(currentView==='dashboard') renderDashboard(container);
+  else if(currentView==='products') renderProducts(container);
+  else if(currentView==='ingredients') renderIngredients(container);
+  else if(currentView==='orders') renderOrders(container);
+  else if(currentView==='customers') renderCustomers(container);
+  else if(currentView==='feedback') renderFeedback(container);
+  else if(currentView==='vouchers') renderVouchers(container);
+  else if(currentView==='shifts') renderShifts(container);
+  else if(currentView==='reports') renderReports(container);
+}
+
+// ---------- DASHBOARD ----------
+function renderDashboard(root){
+  const c = el('div');
+  const header = el('div',{class:'card flex-space'},[el('h2',{},'Dashboard'),el('div',{},`Tạm thời: dữ liệu local`)])
+  c.appendChild(header);
+  // low inventory alerts
+  const low = state.ingredients.filter(i=>i.qty<=i.lowThreshold);
+  if(low.length){
+    const a = el('div',{class:'card alert'});
+    a.innerHTML = '<strong>Cảnh báo:</strong> Nguyên liệu sắp hết <div class="small" style="margin-top:6px">'+low.map(i=>`${i.name} (${i.qty} ${i.unit})`).join(', ')+'</div>'
+    c.appendChild(a);
+  }
+  // quick stats
+  const stats = el('div',{class:'row'});
+  stats.style.marginTop='12px';
+  stats.appendChild(el('div',{class:'card',style:'flex:1'},`<h3>Sản phẩm: ${state.products.length}</h3><div class="small">Sản phẩm đang kích hoạt</div>`));
+  stats.appendChild(el('div',{class:'card',style:'flex:1'},`<h3>Nguyên liệu: ${state.ingredients.length}</h3><div class="small">Tổng loại nguyên liệu</div>`));
+  stats.appendChild(el('div',{class:'card',style:'flex:1'},`<h3>Đơn hàng: ${state.orders.length}</h3><div class="small">Tổng đơn</div>`));
+  c.appendChild(stats);
+  // recent orders
+  const recent = el('div',{class:'card'});
+  recent.innerHTML = '<h3>Đơn gần đây</h3>' + (state.orders.length? `<table><thead><tr><th>Mã</th><th>Khách</th><th>Trạng thái</th><th>Tổng</th></tr></thead><tbody>${state.orders.slice(-5).map(o=>`<tr><td>${o.id}</td><td>${o.customerName||'-'}</td><td>${o.status}</td><td>${o.total}</td></tr>`).join('')}</tbody></table>` : '<div class="small muted">Chưa có đơn hàng</div>');
+  // because building via innerHTML with template literals - safer to re-create
+  const recBody = el('div');
+  recBody.appendChild(el('h3',{},'Đơn gần đây'));
+  if(state.orders.length){
+    const t = el('table');
+    const thead = el('thead'); thead.innerHTML = '<tr><th>Mã</th><th>Khách</th><th>Trạng thái</th><th>Tổng</th></tr>'; t.appendChild(thead);
+    const tb = el('tbody'); state.orders.slice(-5).forEach(o=>{const tr=el('tr');tr.innerHTML=`<td>${o.id}</td><td>${o.customerName||'-'}</td><td>${o.status}</td><td>${o.total}</td>`;tb.appendChild(tr)});t.appendChild(tb);recBody.appendChild(t);
+  } else recBody.appendChild(el('div',{class:'small muted'},'Chưa có đơn hàng'));
+  c.appendChild(recBody);
+  root.appendChild(c);
+}
+
+// ---------- PRODUCTS ----------
+function renderProducts(root){
+  const c = el('div');
+  c.appendChild(el('div',{class:'card flex-space'},[el('h2',{},'Quản lý sản phẩm'),el('div',{}, renderProductControls())]));
+  const card = el('div',{class:'card'});
+  const table = el('table'); table.innerHTML = '<thead><tr><th>Tên</th><th>SKU</th><th>Giá</th><th>Tồn</th><th></th></tr></thead>';
+  const tbody = el('tbody');
+  state.products.forEach(p=>{
+    const tr = el('tr');
+    tr.innerHTML = `<td>${p.name}</td><td>${p.sku}</td><td>${p.price}</td><td>${p.stock}</td><td></td>`;
+    const td = tr.querySelector('td:last-child');
+    const edit = el('button',{class:'btn ghost',onclick:()=>openProductModal(p)},'Sửa');
+    const del = el('button',{class:'btn',onclick:()=>{if(!can('modifyProducts')){alert('Không có quyền');return} if(confirm('Xóa sản phẩm?')){state.products=state.products.filter(x=>x.id!==p.id);saveState();renderView()}}},'Xóa');
+    td.appendChild(edit);td.appendChild(del);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); card.appendChild(table); c.appendChild(card);
+  root.appendChild(c);
+}
+function renderProductControls(){
+  const div = el('div');
+  const add = el('button',{class:'btn primary',onclick:()=>openProductModal()},'Thêm sản phẩm');
+  div.appendChild(add);
+  const exportBtn = el('button',{class:'btn ghost',onclick:()=>{downloadJSON('products',state.products)}},'Export JSON');
+  div.appendChild(exportBtn);
+  return div;
+}
+function openProductModal(product){
+  if(!can('modifyProducts')){alert('Không có quyền');return}
+  const isNew = !product;
+  const name = prompt('Tên sản phẩm', product?product.name:''); if(name===null) return;
+  const sku = prompt('SKU', product?product.sku:''); if(sku===null) return;
+  const price = parseFloat(prompt('Giá', product?product.price:0)); if(isNaN(price)) return alert('Giá không hợp lệ');
+  const stock = parseInt(prompt('Số lượng tồn', product?product.stock:0)); if(isNaN(stock)) return alert('Số lượng không hợp lệ');
+  if(isNew){ state.products.push({id:uid(),name,sku,price,stock,description:''}); }
+  else { Object.assign(product,{name,sku,price,stock}); }
+  saveState(); renderView();
+}
+
+// ---------- INGREDIENTS (Inventory) ----------
+function renderIngredients(root){
+  const c = el('div');
+  c.appendChild(el('div',{class:'card flex-space'},[el('h2',{},'Quản lý nguyên liệu'),el('div',{},[el('button',{class:'btn primary',onclick:addIngredient},'Thêm nguyên liệu')])]))
+  const card = el('div',{class:'card'});
+  const table = el('table'); table.innerHTML = '<thead><tr><th>Tên</th><th>Số lượng</th><th>Đơn vị</th><th>Ngưỡng cảnh báo</th><th></th></tr></thead>';
+  const tbody = el('tbody');
+  state.ingredients.forEach(i=>{
+    const tr = el('tr'); tr.innerHTML = `<td>${i.name}</td><td>${i.qty}</td><td>${i.unit}</td><td>${i.lowThreshold}</td><td></td>`;
+    const td = tr.querySelector('td:last-child');
+    td.appendChild(el('button',{class:'btn ghost',onclick:()=>editIngredient(i)},'Sửa'));
+    td.appendChild(el('button',{class:'btn',onclick:()=>{if(!can('manageInventory')){alert('Không có quyền');return} if(confirm('Xóa nguyên liệu?')){state.ingredients=state.ingredients.filter(x=>x.id!==i.id);saveState();renderView()}}},'Xóa'));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); card.appendChild(table); c.appendChild(card);
+  root.appendChild(c);
+}
+function addIngredient(){ if(!can('manageInventory')){alert('Không có quyền');return} const name=prompt('Tên nguyên liệu'); if(!name) return; const qty=parseFloat(prompt('Số lượng',0)); if(isNaN(qty)) return alert('Số lượng sai'); const unit=prompt('Đơn vị','kg'); const low=parseFloat(prompt('Ngưỡng cảnh báo',5)); state.ingredients.push({id:uid(),name,qty,unit,lowThreshold:low}); saveState(); renderView() }
+function editIngredient(i){ if(!can('manageInventory')){alert('Không có quyền');return} const qty=parseFloat(prompt('Số lượng',i.qty)); if(isNaN(qty)) return alert('Số lượng sai'); const low=parseFloat(prompt('Ngưỡng cảnh báo',i.lowThreshold)); i.qty=qty; i.lowThreshold=low; saveState(); renderView(); }
+
+// ---------- ORDERS ----------
+function renderOrders(root){
+  const c = el('div');
+  c.appendChild(el('div',{class:'card flex-space'},[el('h2',{},'Quản lý đơn hàng'),el('div',{},[currentRole==='sales'?el('button',{class:'btn primary',onclick:createOrder},'Tạo đơn mới'):el('div')])]
+  ));
+  const card = el('div',{class:'card'});
+  const table = el('table'); table.innerHTML = '<thead><tr><th>Mã</th><th>Khách</th><th>Trạng thái</th><th>Tổng</th><th></th></tr></thead>';
+  const tbody = el('tbody');
+  state.orders.forEach(o=>{
+    const tr = el('tr'); tr.innerHTML = `<td>${o.id}</td><td>${o.customerName||'-'}</td><td>${o.status}</td><td>${o.total}</td><td></td>`;
+    const td = tr.querySelector('td:last-child');
+    td.appendChild(el('button',{class:'btn ghost',onclick:()=>viewOrder(o)},'Xem'));
+    if(can('modifyOrders')) td.appendChild(el('button',{class:'btn',onclick:()=>{const newStatus=prompt('Trạng thái',o.status); if(newStatus){o.status=newStatus; saveState(); renderView()}}},'Cập nhật'));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); card.appendChild(table); c.appendChild(card);
+  root.appendChild(c);
+}
+function createOrder(){
+  if(!can('createOrder')){alert('Không có quyền');return}
+  const name = prompt('Tên khách'); if(name===null) return;
+  // simple order: pick first product
+  const pid = state.products[0]; if(!pid)return alert('Chưa có sản phẩm');
+  const qty = parseInt(prompt('Số lượng',1)); if(isNaN(qty)) return alert('Số lượng sai');
+  const total = pid.price * qty;
+  const order = {id:'ORD'+uid(),customerName:name,status:'pending',total,items:[{productId:pid.id,qty,price:pid.price}]}
+  state.orders.push(order); saveState(); renderView();
+}
+function viewOrder(o){
+  alert('Đơn '+o.id+'\nKhách: '+(o.customerName||'-')+'\nTrạng thái: '+o.status+'\nTổng: '+o.total);
+}
+
+// ---------- CUSTOMERS ----------
+function renderCustomers(root){
+  const c = el('div');
+  c.appendChild(el('div',{class:'card flex-space'},[el('h2',{},'Khách hàng'),el('div',{},[el('button',{class:'btn primary',onclick:addCustomer},'Thêm khách hàng')])]))
+  const card = el('div',{class:'card'});
+  if(!state.customers.length) card.appendChild(el('div',{class:'small muted'},'Chưa có khách hàng'))
+  else{
+    const t = el('table'); t.innerHTML = '<thead><tr><th>Tên</th><th>Phone</th><th>Email</th><th></th></tr></thead>'; const tb=el('tbody'); state.customers.forEach(cu=>{const tr=el('tr');tr.innerHTML=`<td>${cu.name}</td><td>${cu.phone}</td><td>${cu.email||''}</td><td></td>`;const td=tr.querySelector('td:last-child');td.appendChild(el('button',{class:'btn ghost',onclick:()=>editCustomer(cu)},'Sửa'));tb.appendChild(tr)});t.appendChild(tb);card.appendChild(t)
+  }
+  c.appendChild(card); root.appendChild(c);
+}
+function addCustomer(){ const name=prompt('Tên'); if(!name) return; const phone=prompt('Phone'); state.customers.push({id:uid(),name,phone}); saveState(); renderView()} function editCustomer(cu){ const name=prompt('Tên',cu.name); if(!name) return; cu.name=name; saveState(); renderView() }
+
+// ---------- FEEDBACK ----------
+function renderFeedback(root){
+  const c = el('div'); c.appendChild(el('div',{class:'card flex-space'},[el('h2',{},'Phản hồi & Khiếu nại'),el('div',{},[el('button',{class:'btn primary',onclick:()=>addFeedback()},'Tạo phản hồi (test)')])]))
+  const card = el('div',{class:'card'});
+  if(!state.feedbacks.length) card.appendChild(el('div',{class:'small muted'},'Chưa có phản hồi'));
+  else{
+    const t = el('table'); t.innerHTML = '<thead><tr><th>Khách</th><th>Nội dung</th><th>Trạng thái</th><th></th></tr></thead>'; const tb=el('tbody'); state.feedbacks.forEach(f=>{const tr=el('tr');tr.innerHTML=`<td>${f.customerName||'-'}</td><td>${f.message}</td><td>${f.status}</td><td></td>`;const td=tr.querySelector('td:last-child');td.appendChild(el('button',{class:'btn ghost',onclick:()=>{f.status='reviewed';saveState();renderView()}},'Duyệt'));td.appendChild(el('button',{class:'btn',onclick:()=>{const r=prompt('Trả lời',f.reply||''); if(r!==null){f.reply=r; f.status='resolved'; saveState(); renderView()}}},'Trả lời'));tb.appendChild(tr)});t.appendChild(tb);card.appendChild(t)
+  }
+  c.appendChild(card); root.appendChild(c);
+}
+function addFeedback(){ state.feedbacks.push({id:uid(),customerName:'Khách thử',message:'Chưa hài lòng về giao hàng',status:'new'}); saveState(); renderView() }
+
+// ---------- VOUCHERS ----------
+function renderVouchers(root){
+  const c = el('div'); c.appendChild(el('div',{class:'card flex-space'},[el('h2',{},'Voucher / Khuyến mãi'),el('div',{},[el('button',{class:'btn primary',onclick:addVoucher},'Thêm voucher')])]))
+  const card = el('div',{class:'card'});
+  const t=el('table'); t.innerHTML = '<thead><tr><th>Mã</th><th>Giảm(%)</th><th>Ghi chú</th></tr></thead>'; const tb=el('tbody'); state.vouchers.forEach(v=>{const tr=el('tr');tr.innerHTML=`<td>${v.code}</td><td>${v.discountPercent}</td><td>${v.description||''}</td>`;tb.appendChild(tr)}); t.appendChild(tb); card.appendChild(t); c.appendChild(card); root.appendChild(c);
+}
+function addVoucher(){ const code=prompt('Mã voucher'); if(!code) return; const pct=parseFloat(prompt('Giảm bao nhiêu (%)',10)); state.vouchers.push({id:uid(),code,discountPercent:pct,description:''}); saveState(); renderView() }
+
+// ---------- SHIFTS ----------
+function renderShifts(root){
+  const c = el('div'); c.appendChild(el('div',{class:'card flex-space'},[el('h2',{},'Quản lý ca làm'),el('div',{},[el('button',{class:'btn primary',onclick:addShift},'Thêm ca')])]))
+  const card = el('div',{class:'card'});
+  if(!state.shifts.length) card.appendChild(el('div',{class:'small muted'},'Chưa có ca'));
+  else{ const t=el('table'); t.innerHTML='<thead><tr><th>Nhân viên</th><th>Vai trò</th><th>Ngày</th><th>Thời gian</th></tr></thead>'; const tb=el('tbody'); state.shifts.forEach(s=>{const tr=el('tr');tr.innerHTML=`<td>${s.staffName}</td><td>${s.role}</td><td>${s.date}</td><td>${s.startTime} - ${s.endTime}</td>`;tb.appendChild(tr)}); t.appendChild(tb); card.appendChild(t) }
+  c.appendChild(card); root.appendChild(c);
+}
+function addShift(){ const name=prompt('Tên nhân viên'); if(!name) return; const role=prompt('Vai trò','Nhân viên bán hàng'); const date=prompt('Ngày (YYYY-MM-DD)',new Date().toISOString().slice(0,10)); const st=prompt('Bắt đầu','08:00'); const et=prompt('Kết thúc','17:00'); state.shifts.push({id:uid(),staffName:name,role,date,startTime:st,endTime:et}); saveState(); renderView() }
+
+// ---------- REPORTS ----------
+function renderReports(root){
+  const c = el('div'); c.appendChild(el('div',{class:'card'},el('h2',{},'Báo cáo & Thống kê')));
+  const totalRevenue = state.orders.reduce((s,o)=>s+Number(o.total||0),0);
+  const topProducts = getTopProducts();
+  c.appendChild(el('div',{class:'card'},`<h3>Doanh thu: ${totalRevenue}</h3><div class="small">Tổng doanh thu từ đơn hàng hiện tại</div>`));
+  const pcard = el('div',{class:'card'}); pcard.appendChild(el('h3',{},'Sản phẩm bán chạy')); if(topProducts.length){ const ul=el('div'); ul.innerHTML = '<ol>'+topProducts.map(t=>`<li>${t.name} - ${t.sold}</li>`).join('')+'</ol>'; pcard.appendChild(ul)} else pcard.appendChild(el('div',{class:'small muted'},'Chưa có dữ liệu bán hàng'));
+  c.appendChild(pcard);
+  root.appendChild(c);
+}
+function getTopProducts(){
+  const map = {};
+  state.orders.forEach(o=>{(o.items||[]).forEach(it=>{map[it.productId] = (map[it.productId]||0) + it.qty})});
+  const arr = Object.keys(map).map(pid=>{const p=state.products.find(x=>x.id==pid)||{name:'(đã xóa)'}; return {productId:pid,name:p.name,sold:map[pid]}});
+  arr.sort((a,b)=>b.sold-a.sold);
+  return arr.slice(0,10);
+}
+
+// ---------- Permissions (simple) ----------
+function can(action){
+  // admin: all; sales: view products, create/update orders; warehouse: manage inventory
+  if(currentRole==='admin') return true;
+  if(currentRole==='sales'){
+    return ['createOrder','modifyOrders','modifyProducts','viewProducts'].includes(action) || action==='view';
+  }
+  if(currentRole==='warehouse') return action==='manageInventory' || action==='view';
+  return false;
+}
+
+// map friendly actions
+// modifyProducts -> admin or sales (for demo), manageInventory -> warehouse/admin
+
+// ---------- Helpers ----------
+function downloadJSON(name,obj){ const a=document.createElement('a'); a.href='data:application/json,'+encodeURIComponent(JSON.stringify(obj,null,2)); a.download = name+'.json'; a.click(); }
+
+// init
+setView('dashboard');
+</script>
+</body>
+</html>
